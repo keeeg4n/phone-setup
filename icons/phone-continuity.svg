@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4f57"/>
+      <stop offset="1" stop-color="#26292e"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#62a0ea"/>
+      <stop offset="1" stop-color="#1c71d8"/>
+    </linearGradient>
+  </defs>
+  <!-- shadow -->
+  <rect x="34" y="10" width="64" height="112" rx="12" fill="#000" opacity="0.18"/>
+  <!-- body -->
+  <rect x="32" y="6" width="64" height="112" rx="12" fill="url(#body)"/>
+  <rect x="32.5" y="6.5" width="63" height="111" rx="11.5" fill="none" stroke="#fff" stroke-opacity="0.12"/>
+  <!-- screen -->
+  <rect x="37" y="13" width="54" height="98" rx="7" fill="url(#screen)"/>
+  <!-- camera -->
+  <circle cx="64" cy="19" r="2.6" fill="#26292e"/>
+  <!-- app grid -->
+  <g fill="#fff" fill-opacity="0.85">
+    <rect x="43" y="32" width="11" height="11" rx="3"/>
+    <rect x="58.5" y="32" width="11" height="11" rx="3"/>
+    <rect x="74" y="32" width="11" height="11" rx="3"/>
+    <rect x="43" y="48" width="11" height="11" rx="3"/>
+    <rect x="58.5" y="48" width="11" height="11" rx="3"/>
+    <rect x="74" y="48" width="11" height="11" rx="3"/>
+  </g>
+  <!-- dock + home bar -->
+  <rect x="41" y="92" width="46" height="12" rx="6" fill="#fff" fill-opacity="0.25"/>
+  <rect x="54" y="107" width="20" height="2" rx="1" fill="#fff" fill-opacity="0.7"/>
+</svg>

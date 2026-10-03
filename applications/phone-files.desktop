@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Phone Files
-Comment=Browse the moto g13's storage
+Comment=Browse your phone's storage
 Exec=@BINDIR@/phone-files
 Icon=phone
 Terminal=false

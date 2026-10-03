@@ -17,7 +17,7 @@ manager — see [Supported systems](#supported-systems).
 
 | Feature | How you use it |
 |---|---|
-| **Phone mirroring** — full control from the laptop; phone's own screen stays dark | App menu → *Phone (scrcpy)*, or `phone` |
+| **Phone mirroring** — full control from the laptop; phone's own screen stays dark | App menu → your phone's name (e.g. *Moto G13*), or `phone` |
 | **No PIN while near the laptop** — Android *Extend Unlock* with the laptop as a trusted Bluetooth device | Automatic |
 | **PIN after a restart** — typed in a laptop dialog (the PIN pad can't be mirrored) | Automatic |
 | **Lock on close** — closing the window leaves the phone locked on its home screen | Automatic |

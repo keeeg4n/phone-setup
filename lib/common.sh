@@ -27,6 +27,46 @@ pc_confs() {
   for c in "$PC_DIR"/*.conf; do [ -e "$c" ] && echo "$c"; done
 }
 
+# Phone name for display: all-lowercase words get a capital first letter ("moto g13" ->
+# "Moto G13"); words that already have capitals stay ("iPhone", "OnePlus"). The stored
+# NAME is left as is.
+pc_display_name() {
+  local w out=() words
+  read -ra words <<< "$1"
+  for w in "${words[@]}"; do
+    if [[ "$w" == *[[:upper:]]* ]]; then out+=("$w"); else out+=("${w^}"); fi
+  done
+  echo "${out[*]}"
+}
+
+# App-menu launcher for the loaded phone: phone icon, named after the phone. Its
+# StartupWMClass matches the window class `phone` gives that phone's scrcpy window,
+# so the dock and Alt-Tab show this icon and name too.
+pc_write_launcher() {
+  local apps="$HOME/.local/share/applications" label favs
+  [[ "$SERIAL" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  label=$(pc_display_name "$NAME" | tr -d '[:cntrl:]' | sed 's/\\/\\\\/g')
+  mkdir -p "$apps"
+  cat > "$apps/phone-$SERIAL.desktop" <<EOF
+[Desktop Entry]
+Name=$label
+Comment=Show and control $label on this computer
+Exec=$HOME/.local/bin/phone --phone $SERIAL
+Icon=phone-continuity
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupWMClass=phone-$SERIAL
+EOF
+  # Move a dock pin of the old generic launcher over to this phone's launcher
+  if command -v gsettings >/dev/null; then
+    favs=$(gsettings get org.gnome.shell favorite-apps 2>/dev/null)
+    if [[ "$favs" == *"'phone-scrcpy.desktop'"* ]]; then
+      gsettings set org.gnome.shell favorite-apps "${favs/\'phone-scrcpy.desktop\'/\'phone-$SERIAL.desktop\'}"
+    fi
+  fi
+}
+
 # Current LAN address of a phone as KDE Connect sees it (empty if unknown).
 pc_kdec_ip() {
   [ -n "$1" ] || return 0

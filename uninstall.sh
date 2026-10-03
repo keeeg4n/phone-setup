@@ -21,6 +21,8 @@ rm -f "$SHARE/nautilus-python/extensions/phone_photo.py" "$SHARE/nemo-python/ext
 for f in phone-scrcpy phone-cam phone-files phone-audio phone-dialer phone-call-log; do
   rm -f "$SHARE/applications/$f.desktop"
 done
+grep -lx "Icon=phone-continuity" "$SHARE/applications"/phone-*.desktop 2>/dev/null | xargs -r rm -f
+rm -f "$SHARE/icons/hicolor/scalable/apps/phone-continuity.svg"
 update-desktop-database "$SHARE/applications" 2>/dev/null || true
 
 if [ "${1:-}" = "--purge" ]; then
