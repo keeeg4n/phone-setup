@@ -14,9 +14,16 @@ while true; do
     [ -n "$c" ] || continue
     pc_load "$c"
     [ -n "$KDEC_ID" ] || continue
-    if pc_kdec_reachable "$KDEC_ID" && ! sftp "$KDEC_ID" isMounted | grep -q true; then
-      sftp "$KDEC_ID" mountAndWait >/dev/null
+    pc_kdec_reachable "$KDEC_ID" || continue
+    if sftp "$KDEC_ID" isMounted | grep -q true; then
+      # KDE Connect keeps saying "mounted" after the phone's sftp server goes away,
+      # leaving a dead sshfs that gives I/O errors and hangs Files. Remount it then.
+      mp=$(sftp "$KDEC_ID" mountPoint | sed -n "s/^('\(.*\)',)$/\1/p")
+      [ -n "$mp" ] && timeout 5 stat "$mp/storage/emulated/0" >/dev/null 2>&1 && continue
+      sftp "$KDEC_ID" unmount >/dev/null
+      sleep 2
     fi
+    sftp "$KDEC_ID" mountAndWait >/dev/null
   done <<< "$(pc_confs)"
   sleep 20
 done
