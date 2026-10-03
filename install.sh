@@ -124,7 +124,7 @@ for f in "$SRC"/applications/*.desktop; do
   fi
   sed "s|@BINDIR@|$BIN|g" "$f" > "$SHARE/applications/$name"
 done
-install -Dm644 "$SRC/icons/phone-continuity.svg" "$SHARE/icons/hicolor/scalable/apps/phone-continuity.svg"
+install -Dm644 -t "$SHARE/icons/hicolor/scalable/apps" "$SRC"/icons/*.svg
 gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
 # One launcher per phone already set up (phone-setup makes them for new phones)
 ( set +eu; source "$LIB/common.sh"

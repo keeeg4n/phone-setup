@@ -53,7 +53,9 @@ DETECTED_NAME=$(pc_adb_shell settings get global device_name | tr -d '\r')
 NAME=${NAME:-$DETECTED_NAME}
 BT_MAC=$(pc_adb_shell settings get secure bluetooth_address | tr -d '\r')
 [ "$BT_MAC" = "null" ] && BT_MAC=""
-ok "$NAME (serial $SERIAL, Android $(pc_adb_shell getprop ro.build.version.release | tr -d '\r'))"
+DEVICE_TYPE=phone
+pc_adb_shell getprop ro.build.characteristics | grep -q tablet && DEVICE_TYPE=tablet
+ok "$NAME ($DEVICE_TYPE, serial $SERIAL, Android $(pc_adb_shell getprop ro.build.version.release | tr -d '\r'))"
 
 save_conf() {
   cat > "$CONF" <<EOF
@@ -62,6 +64,7 @@ SERIAL="$SERIAL"
 WIFI_IP="$WIFI_IP"
 BT_MAC="$BT_MAC"
 KDEC_ID="$KDEC_ID"
+DEVICE_TYPE="$DEVICE_TYPE"
 EOF
 }
 
