@@ -27,6 +27,7 @@ manager — see [Supported systems](#supported-systems).
 | **Calls** — ring + Answer/Decline on the laptop; call audio on the laptop's speakers or Bluetooth earbuds | Automatic; *Phone Dialer*, *Call History* |
 | **Laptop sound on the phone** (e.g. wired headphones on the phone) | App menu → *Phone Audio* (toggle) |
 | **Clipboard, notifications, SMS, send files** | KDE Connect |
+| **Quick Share** (optional) — AirDrop-style sending/receiving with *any* nearby Android device, through [rQuickShare](https://github.com/Martichou/rquickshare). Off by default; only runs (and is only visible) while switched on | Top bar (optional switch, asked during install): GNOME Quick Settings → *Quick Share*, or the Cinnamon panel icon; otherwise App menu → *RQuickShare*. Phone: *Share → Quick Share* |
 | **Several phones** — every tool finds whichever set-up phone is reachable (asks if several) | `--phone NAME` on any command |
 
 ## Install
