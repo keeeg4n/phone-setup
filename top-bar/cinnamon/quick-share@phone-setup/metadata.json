@@ -1,0 +1,7 @@
+{
+  "uuid": "quick-share@phone-setup",
+  "name": "Quick Share",
+  "description": "Turn Quick Share (Android's AirDrop) on or off through rQuickShare. Part of phone-setup.",
+  "url": "https://github.com/keeeg4n/phone-setup",
+  "max-instances": 1
+}
