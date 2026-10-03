@@ -17,7 +17,7 @@ for f in phone phone-setup phone-unlock phone-cam phone-photo phone-files phone-
 done
 rm -f "$BIN/scrcpy" "$BIN/adb"
 rm -rf "$HOME/.local/lib/phone-continuity" "$SHARE/scrcpy" "$SHARE/audio-share"
-rm -f "$SHARE/nautilus-python/extensions/phone_photo.py"
+rm -f "$SHARE/nautilus-python/extensions/phone_photo.py" "$SHARE/nemo-python/extensions/phone_photo.py"
 for f in phone-scrcpy phone-cam phone-files phone-audio phone-dialer phone-call-log; do
   rm -f "$SHARE/applications/$f.desktop"
 done

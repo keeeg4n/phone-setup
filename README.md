@@ -9,8 +9,9 @@ All of it is glue around existing open-source tools:
 PipeWire's Bluetooth telephony, and
 [Audio Share](https://github.com/mkckr0/audio-share).
 
-Tested on **Fedora 44, GNOME 50**, with a Motorola moto g13 (Android 14).
-Most of it works on KDE Plasma too (see [Desktop support](#desktop-support)).
+Used daily on **Fedora 44 + GNOME 50** with a Motorola moto g13 (Android 14).
+The installer also supports **Linux Mint / Ubuntu / Debian** (apt) and the **Nemo** file
+manager — see [Supported systems](#supported-systems).
 
 ## Features
 
@@ -21,7 +22,7 @@ Most of it works on KDE Plasma too (see [Desktop support](#desktop-support)).
 | **PIN after a restart** — typed in a laptop dialog (the PIN pad can't be mirrored) | Automatic |
 | **Lock on close** — closing the window leaves the phone locked on its home screen | Automatic |
 | **Phone as webcam** (1080p) for any video app | App menu → *Phone Camera* (toggle), or `phone-cam [--front]` |
-| **Take Photo** into any folder | Files → right-click → *Take Photo with ‹phone›* |
+| **Take Photo** into any folder | Files or Nemo → right-click → *Take Photo with ‹phone›* |
 | **Phone storage** in the Files sidebar, kept connected | Sidebar bookmark, or *Phone Files* |
 | **Calls** — ring + Answer/Decline on the laptop; call audio on the laptop's speakers or Bluetooth earbuds | Automatic; *Phone Dialer*, *Call History* |
 | **Laptop sound on the phone** (e.g. wired headphones on the phone) | App menu → *Phone Audio* (toggle) |
@@ -38,12 +39,16 @@ cd phone-setup
 
 The installer (asks for `sudo` for packages):
 
-1. installs `kde-connect`, `sshfs`, `zenity`, `nautilus-python`, `pactl`, … with `dnf`
+1. installs KDE Connect, `sshfs`, `zenity`, `pactl` and the file-manager plugin bindings
+   with `dnf` or `apt`
 2. downloads **scrcpy 3.3.4** and **Audio Share 0.3.4** from their GitHub releases and
    checks them against the published SHA-256 checksums
-3. puts the `phone-*` commands in `~/.local/bin`, adds menu entries and the Files item
-4. enables three user services (storage auto-mount, Bluetooth audio guard, calls)
-5. optionally installs the **v4l2loopback** webcam driver from RPM Fusion
+3. puts the `phone-*` commands in `~/.local/bin`, adds menu entries and the right-click
+   *Take Photo* item for GNOME Files and/or Nemo
+4. enables the user services (storage auto-mount, Bluetooth audio guard, and calls if
+   PipeWire is new enough)
+5. optionally installs the **v4l2loopback** webcam driver (RPM Fusion on Fedora,
+   `v4l2loopback-dkms` on Mint/Ubuntu)
 
 Then plug the phone in by USB and run:
 
@@ -91,18 +96,29 @@ Each accepts `--phone NAME` to choose a phone when several are set up.
 - Calls use PipeWire's `org.pipewire.Telephony` service (HFP hands-free). Between calls
   the laptop rejects call audio, so calls you take on the phone stay on the phone.
 
-## Desktop support
+## Supported systems
 
-Built for **GNOME**. On **KDE Plasma** everything works except the Files right-click
-*Take Photo* item and the sidebar bookmark (Dolphin shows KDE Connect phones itself).
+| | Fedora 42+ | Mint / Ubuntu on 26.04+ | Mint 22 / Ubuntu 24.04 |
+|---|---|---|---|
+| Mirroring, webcam, photos, files, audio | ✅ | ✅ | ✅ |
+| Calls (needs PipeWire ≥ 1.4) | ✅ | ✅ | ❌ PipeWire 1.0 — skipped by the installer |
+
+Installer tested on Fedora 44 and in Linux Mint containers (Ubuntu 24.04 and 26.04 bases).
+
+**Desktops:** GNOME (Files) and Cinnamon (Nemo) get the right-click *Take Photo* item and
+the sidebar bookmark. On **KDE Plasma** everything else works; Dolphin shows KDE Connect
+phones by itself.
+
+On Mint/Ubuntu with **Secure Boot**, installing the webcam driver asks you to set a
+password; reboot and choose *Enroll MOK* to allow the driver to load.
 
 ## Limitations
 
 - After a **phone** restart: plug in USB and re-run `phone-setup`, and enter the PIN once.
 - The phone's PIN pad can't be shown in the mirror window (Android hides it from capture).
 - *Phone Audio* needs both devices on the same Wi-Fi (Audio Share uses UDP).
-- Calls rely on PipeWire ≥ 1.4 Bluetooth telephony; call quality depends on the phone's
-  Bluetooth hands-free support.
+- Calls rely on PipeWire ≥ 1.4 Bluetooth telephony and haven't been tested end-to-end
+  with a real call yet; call quality depends on the phone's Bluetooth hands-free support.
 
 ## Uninstall
 
