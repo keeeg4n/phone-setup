@@ -128,7 +128,10 @@ install -Dm644 -t "$SHARE/icons/hicolor/scalable/apps" "$SRC"/icons/*.svg
 gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
 # One launcher per phone already set up (phone-setup makes them for new phones)
 ( set +eu; source "$LIB/common.sh"
-  while read -r c; do [ -n "$c" ] && pc_load "$c" && pc_write_launcher; done <<< "$(pc_confs)" )
+  while read -r c; do
+    if [ -n "$c" ]; then pc_load "$c" && pc_write_launcher; fi
+  done <<< "$(pc_confs)"
+  true )   # no phones set up yet is fine
 rm -f "$SHARE/applications/phone-scrcpy.desktop"   # old generic launcher
 update-desktop-database "$SHARE/applications" 2>/dev/null || true
 ok "Commands in $BIN and app-menu entries"
