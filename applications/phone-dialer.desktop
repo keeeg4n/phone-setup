@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Phone Dialer
+Comment=Call someone from the laptop through your phone
+Exec=@BINDIR@/phone-dial
+Icon=call-start
+Terminal=false
+Type=Application
+Categories=Utility;Telephony;

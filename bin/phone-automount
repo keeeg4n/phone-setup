@@ -1,0 +1,22 @@
+#!/bin/bash
+# Keep each set-up phone's storage mounted (via KDE Connect) whenever the phone is
+# reachable, so its Files sidebar bookmark always works. Runs as a user service.
+source "$HOME/.local/lib/phone-continuity/common.sh"
+
+sftp() {   # sftp <kdec-id> <method>
+  gdbus call --session --dest org.kde.kdeconnect \
+    --object-path "/modules/kdeconnect/devices/$1/sftp" \
+    --method "org.kde.kdeconnect.device.sftp.$2" 2>/dev/null
+}
+
+while true; do
+  while read -r c; do
+    [ -n "$c" ] || continue
+    pc_load "$c"
+    [ -n "$KDEC_ID" ] || continue
+    if pc_kdec_reachable "$KDEC_ID" && ! sftp "$KDEC_ID" isMounted | grep -q true; then
+      sftp "$KDEC_ID" mountAndWait >/dev/null
+    fi
+  done <<< "$(pc_confs)"
+  sleep 20
+done

@@ -1,0 +1,62 @@
+#!/bin/bash
+# Make a phone call from the laptop through the phone (Bluetooth hands-free).
+# Call audio uses the laptop's current speakers/mic (e.g. Bluetooth earbuds).
+# Usage: phone-dial [--phone NAME] [number]     (no number: pick a contact / recent call)
+source "$HOME/.local/lib/phone-continuity/common.sh"
+pc_phone_opt "$@"; shift $PC_SHIFT
+NUMBER="$*"
+
+pc_select "$PHONE_ARG" || exit 1
+pc_bt_connect
+
+# The phone's hands-free link in PipeWire's telephony service
+AG=$(busctl --user call org.pipewire.Telephony /org/pipewire/Telephony \
+       org.freedesktop.DBus.ObjectManager GetManagedObjects --json=short 2>/dev/null |
+     python3 -c '
+import json, sys
+mac = sys.argv[1]
+for path, ifaces in json.load(sys.stdin)["data"][0].items():
+    if ifaces.get("org.pipewire.Telephony.AudioGateway1", {}).get("Address", {}).get("data") == mac:
+        print(path); break' "$BT_MAC")
+[ -n "$AG" ] || { pc_notify "$NAME isn't connected for calls (Bluetooth hands-free). Is Bluetooth on?"; exit 1; }
+
+if [ -z "$NUMBER" ]; then
+  NUMBER=$(
+    {
+      echo "✎ Type a number…"; echo ""; echo ""
+      pc_adb_shell "content query --uri content://call_log/calls --projection name:number --sort 'date DESC'" 2>/dev/null |
+        tr -d '\r' | python3 -c '
+import re, sys
+seen = set()
+for line in sys.stdin:
+    m = re.search(r"name=(.*?), number=(.*)$", line)
+    if not m: continue
+    name, num = m.group(1), m.group(2).strip()
+    if num in seen or len(seen) >= 10: continue
+    seen.add(num)
+    print(name if name != "NULL" else num); print(num); print("Recent")'
+      pc_adb_shell "content query --uri content://com.android.contacts/data/phones --projection display_name:data1 --sort 'display_name ASC'" 2>/dev/null |
+        tr -d '\r' | python3 -c '
+import re, sys
+for line in sys.stdin:
+    m = re.search(r"display_name=(.*?), data1=(.*)$", line)
+    if m: print(m.group(1)); print(m.group(2).strip()); print("Contact")'
+    } | zenity --list --title="Call from $NAME" --text="Type to search, then double-click to call." \
+          --column=Name --column=Number --column="" --print-column=2 --width=460 --height=560 2>/dev/null
+  ) || exit 0
+  if [ -z "$NUMBER" ]; then
+    NUMBER=$(zenity --entry --title="Call from $NAME" --text="Phone number:" 2>/dev/null) || exit 0
+  fi
+fi
+NUMBER=$(echo "$NUMBER" | tr -cd '0-9+*#')
+[ -n "$NUMBER" ] || exit 0
+
+# Tell phone-calls-daemon this call is ours (audio on the laptop), then dial
+touch "$XDG_RUNTIME_DIR/phone-call-local"
+busctl --user set-property org.pipewire.Telephony "$AG" org.pipewire.Telephony.AudioGatewayTransport1 RejectSCO b false
+if ! busctl --user call org.pipewire.Telephony "$AG" org.ofono.VoiceCallManager Dial s "$NUMBER" >/dev/null 2>&1; then
+  rm -f "$XDG_RUNTIME_DIR/phone-call-local"
+  busctl --user set-property org.pipewire.Telephony "$AG" org.pipewire.Telephony.AudioGatewayTransport1 RejectSCO b true
+  pc_notify "Couldn't place the call through $NAME."
+  exit 1
+fi

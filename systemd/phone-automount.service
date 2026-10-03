@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep phone storage mounted via KDE Connect (for the Files sidebar bookmarks)
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/phone-automount
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

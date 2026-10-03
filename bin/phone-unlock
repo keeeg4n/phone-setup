@@ -1,0 +1,14 @@
+#!/bin/bash
+# Wake a phone, open the PIN pad, and enter the PIN (read hidden, never stored).
+# Usage: phone-unlock [--phone NAME]
+source "$HOME/.local/lib/phone-continuity/common.sh"
+pc_phone_opt "$@"; shift $PC_SHIFT
+pc_select "$PHONE_ARG" || exit 1
+
+read -rsp "PIN for $NAME: " PIN; echo
+if pc_unlock_pin "$PIN"; then
+  echo "Unlocked."
+else
+  echo "Still locked - check the PIN and try again."
+fi
+unset PIN

@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Phone calls on the laptop, through PipeWire's Bluetooth hands-free (HFP) telephony
+service (org.pipewire.Telephony, oFono-compatible).
+
+- Incoming call: ring, show a notification with the caller's name and Answer/Decline.
+  Answer here -> call audio on the laptop's current output/mic (e.g. Bluetooth earbuds).
+  Answer on the phone -> audio stays on the phone.
+- Calls dialled from the laptop (phone-dial) get an "in call" window with Hang up.
+- Between calls RejectSCO is kept on, so call audio never jumps to the laptop unasked.
+"""
+import os
+import subprocess
+import threading
+from urllib.parse import quote
+
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+
+SVC = "org.pipewire.Telephony"
+ROOT = "/org/pipewire/Telephony"
+AG_IFACE = "org.pipewire.Telephony.AudioGateway1"
+TRANSPORT_IFACE = "org.pipewire.Telephony.AudioGatewayTransport1"
+CALL_IFACES = ("org.pipewire.Telephony.Call1", "org.ofono.VoiceCall")
+RING = "/usr/share/sounds/freedesktop/stereo/phone-incoming-call.oga"
+LIB = os.path.expanduser("~/.local/lib/phone-continuity/common.sh")
+LOCAL_FLAG = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "phone-call-local")
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+
+
+def call_method(path, iface, method, args=None, sig=None):
+    try:
+        bus.call_sync(SVC, path, iface, method,
+                      GLib.Variant(sig, args) if sig else None,
+                      None, Gio.DBusCallFlags.NONE, 5000, None)
+        return True
+    except GLib.Error as e:
+        print(f"{method} on {path} failed: {e.message}", flush=True)
+        return False
+
+
+def set_reject_sco(ag_path, value):
+    try:
+        bus.call_sync(SVC, ag_path, "org.freedesktop.DBus.Properties", "Set",
+                      GLib.Variant("(ssv)", (TRANSPORT_IFACE, "RejectSCO", GLib.Variant("b", value))),
+                      None, Gio.DBusCallFlags.NONE, 5000, None)
+    except GLib.Error as e:
+        print(f"RejectSCO={value} failed: {e.message}", flush=True)
+
+
+def lookup_name(number):
+    """Contact name for a number, read from the phone over adb (None if unknown)."""
+    if not number:
+        return None
+    script = f'''source "{LIB}"; pc_select >/dev/null 2>&1 || exit 1
+pc_adb_shell "content query --uri content://com.android.contacts/phone_lookup/{quote(number, safe="")} --projection display_name" '''
+    try:
+        out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=12).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    for line in out.splitlines():
+        if "display_name=" in line:
+            return line.split("display_name=", 1)[1].strip()
+    return None
+
+
+class Notifier:
+    """Desktop notifications with action buttons (org.freedesktop.Notifications)."""
+
+    def __init__(self):
+        self.handlers = {}
+        bus.signal_subscribe("org.freedesktop.Notifications", "org.freedesktop.Notifications",
+                             "ActionInvoked", "/org/freedesktop/Notifications", None,
+                             Gio.DBusSignalFlags.NONE, self._on_action)
+
+    def show(self, title, body, actions=(), icon="call-start", urgent=False, replace=0, on_action=None):
+        flat = [x for a in actions for x in a]
+        hints = {"urgency": GLib.Variant("y", 2 if urgent else 1)}
+        if urgent:
+            hints["resident"] = GLib.Variant("b", True)
+        res = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                            "org.freedesktop.Notifications", "Notify",
+                            GLib.Variant("(susssasa{sv}i)", ("Phone", replace, icon, title, body, flat, hints, 0 if urgent else 8000)),
+                            GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
+        nid = res.unpack()[0]
+        if on_action:
+            self.handlers[nid] = on_action
+        return nid
+
+    def close(self, nid):
+        if not nid:
+            return
+        self.handlers.pop(nid, None)
+        try:
+            bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                          "org.freedesktop.Notifications", "CloseNotification",
+                          GLib.Variant("(u)", (nid,)), None, Gio.DBusCallFlags.NONE, 5000, None)
+        except GLib.Error:
+            pass
+
+    def _on_action(self, _c, _s, _p, _i, _sig, params):
+        nid, action = params.unpack()
+        handler = self.handlers.pop(nid, None)
+        if handler:
+            handler(action)
+
+
+class Call:
+    def __init__(self, daemon, path, iface, props):
+        self.d, self.path, self.iface = daemon, path, iface
+        self.number = props.get("LineIdentification") or props.get("Number") or ""
+        self.name = props.get("Name") or None
+        self.state = props.get("State", "")
+        self.ag = path.rsplit("/", 1)[0]
+        self.notif = 0
+        self.ringer = None
+        self.dialog = None
+        self.local = False
+        self.ended = False
+
+    @property
+    def label(self):
+        return self.name or self.number or "Unknown number"
+
+    # ---- incoming ----
+    def start_incoming(self):
+        self.ringer = subprocess.Popen(
+            ["bash", "-c", f'for i in $(seq 1 30); do paplay "{RING}" || exit; done'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self._notify_incoming()
+        threading.Thread(target=self._resolve_name, daemon=True).start()
+
+    def _notify_incoming(self):
+        self.notif = self.d.notifier.show(
+            "Incoming call", f"{self.label}" + (f"\n{self.number}" if self.name else ""),
+            actions=(("answer", "Answer"), ("decline", "Decline")),
+            urgent=True, replace=self.notif, on_action=self._on_incoming_action)
+
+    def _resolve_name(self):
+        if not self.name:
+            name = lookup_name(self.number)
+            if name and not self.ended and self.state == "incoming":
+                self.name = name
+                GLib.idle_add(self._notify_incoming)
+
+    def _on_incoming_action(self, action):
+        self.stop_ringing()
+        if action == "answer":
+            self.local = True
+            set_reject_sco(self.ag, False)
+            call_method(self.path, self.iface, "Answer")
+        elif action == "decline":
+            call_method(self.path, self.iface, "Hangup")
+
+    def stop_ringing(self):
+        if self.ringer and self.ringer.poll() is None:
+            self.ringer.terminate()
+        self.ringer = None
+
+    # ---- state changes ----
+    def update(self, props):
+        if "Name" in props and props["Name"]:
+            self.name = props["Name"]
+        if "LineIdentification" in props and props["LineIdentification"]:
+            self.number = props["LineIdentification"]
+        if "State" in props:
+            self.state = props["State"]
+            self.on_state()
+
+    def on_state(self):
+        if self.state in ("active", "held"):
+            self.stop_ringing()
+            self.d.notifier.close(self.notif)
+            self.notif = 0
+            if self.local:
+                set_reject_sco(self.ag, False)
+                call_method(self.ag, TRANSPORT_IFACE, "Activate")
+                self.show_dialog()
+        elif self.state in ("dialing", "alerting") and self.local:
+            self.show_dialog()
+        elif self.state == "disconnected":
+            self.end()
+
+    def show_dialog(self):
+        if self.dialog and self.dialog.poll() is None:
+            return
+        self.dialog = subprocess.Popen(
+            ["zenity", "--info", "--title=Phone call", "--icon=call-start",
+             f"--text=On a call with {self.label}", "--ok-label=Hang up", "--width=320"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        threading.Thread(target=self._wait_dialog, args=(self.dialog,), daemon=True).start()
+
+    def _wait_dialog(self, dialog):
+        rc = dialog.wait()
+        if rc == 0 and not self.ended:          # "Hang up" pressed
+            GLib.idle_add(lambda: call_method(self.path, self.iface, "Hangup") and False)
+
+    def end(self):
+        if self.ended:
+            return
+        self.ended = True
+        self.stop_ringing()
+        self.d.notifier.close(self.notif)
+        if self.dialog and self.dialog.poll() is None:
+            self.dialog.terminate()
+        set_reject_sco(self.ag, True)
+        self.d.calls.pop(self.path, None)
+
+
+class Daemon:
+    def __init__(self):
+        self.notifier = Notifier()
+        self.calls = {}
+        bus.signal_subscribe(SVC, None, None, None, None, Gio.DBusSignalFlags.NONE, self._on_signal)
+        GLib.timeout_add_seconds(2, self._scan)
+
+    def _scan(self):
+        """Pick up audio gateways/calls that already exist (e.g. after a restart)."""
+        try:
+            res = bus.call_sync(SVC, ROOT, "org.freedesktop.DBus.ObjectManager", "GetManagedObjects",
+                                None, None, Gio.DBusCallFlags.NONE, 5000, None)
+            objs = res.unpack()[0]
+        except GLib.Error:
+            objs = {}
+        for path, ifaces in objs.items():
+            self._added(path, ifaces)
+            try:
+                sub = bus.call_sync(SVC, path, "org.freedesktop.DBus.ObjectManager", "GetManagedObjects",
+                                    None, None, Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+                for p, i in sub.items():
+                    self._added(p, i)
+            except GLib.Error:
+                pass
+        return False
+
+    def _added(self, path, ifaces):
+        if AG_IFACE in ifaces:
+            set_reject_sco(path, True)
+        for iface in CALL_IFACES:
+            if iface in ifaces and path not in self.calls:
+                call = Call(self, path, iface, ifaces[iface])
+                self.calls[path] = call
+                if os.path.exists(LOCAL_FLAG):          # dialled from the laptop
+                    call.local = True
+                    os.unlink(LOCAL_FLAG)
+                print(f"call {path} state={call.state} local={call.local}", flush=True)
+                if call.state == "incoming":
+                    call.start_incoming()
+                else:
+                    call.on_state()
+                break
+
+    def _on_signal(self, _c, _sender, path, iface, member, params):
+        if member == "InterfacesAdded":
+            obj, ifaces = params.unpack()
+            self._added(obj, ifaces)
+        elif member == "InterfacesRemoved":
+            obj, _ = params.unpack()
+            if obj in self.calls:
+                self.calls[obj].end()
+        elif member == "CallRemoved":
+            obj = params.unpack()[0]
+            if obj in self.calls:
+                self.calls[obj].end()
+        elif member == "CallAdded":
+            obj, props = params.unpack()
+            self._added(obj, {CALL_IFACES[1]: props})
+        elif member == "PropertiesChanged" and path in self.calls:
+            _iface, changed, _inv = params.unpack()
+            self.calls[path].update(changed)
+        elif member == "PropertyChanged" and path in self.calls:   # oFono style
+            name, value = params.unpack()
+            self.calls[path].update({name: value})
+
+
+if __name__ == "__main__":
+    Daemon()
+    GLib.MainLoop().run()

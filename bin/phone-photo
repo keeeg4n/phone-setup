@@ -1,0 +1,44 @@
+#!/bin/bash
+# Open the camera on a phone, wait for a new photo, and copy it into a folder.
+# Usage: phone-photo [--phone NAME] [destination-folder]   (default: ~/Pictures)
+source "$HOME/.local/lib/phone-continuity/common.sh"
+pc_phone_opt "$@"; shift $PC_SHIFT
+DEST="${1:-$HOME/Pictures}"
+TIMEOUT=180
+pc_select "$PHONE_ARG" || exit 1
+
+# Newest camera photo, from Android's media index (works whatever folder the camera app uses)
+newest() {
+  pc_adb_shell "content query --uri content://media/external/images/media --projection _data \
+    --where \"relative_path LIKE 'DCIM/%'\" --sort 'date_added DESC' 2>/dev/null | head -1" |
+    sed -n 's/.*_data=\(.*\)$/\1/p' | tr -d '\r'
+}
+BEFORE=$(newest)
+
+# Leave the camera and lock the phone again — unless its scrcpy window is open
+# (locking would black the window out)
+put_away() {
+  pc_adb_shell input keyevent KEYCODE_HOME
+  if ! pgrep -af "^$SCRCPY .*-s ($SERIAL|$WIFI_IP:$ADB_PORT)( |$)" >/dev/null; then
+    sleep 0.5
+    pc_adb_shell input keyevent KEYCODE_SLEEP
+  fi
+}
+
+pc_wake_unlock || exit 1
+pc_adb_shell am start -a android.media.action.STILL_IMAGE_CAMERA >/dev/null
+notify-send -i camera-photo "Take Photo" "Camera is open on $NAME — take the picture."
+
+for ((i=0; i<TIMEOUT; i++)); do
+  sleep 1
+  NOW=$(newest)
+  if [ -n "$NOW" ] && [ "$NOW" != "$BEFORE" ]; then
+    sleep 1.5   # let the phone finish writing the file
+    "$ADB" -s "$ADB_ID" pull "$NOW" "$DEST/" >/dev/null && \
+      notify-send -i camera-photo "Take Photo" "Saved $(basename "$NOW") to $(basename "$DEST")"
+    put_away
+    exit 0
+  fi
+done
+put_away
+notify-send -i camera-photo "Take Photo" "No new photo after $((TIMEOUT/60)) minutes — cancelled."

@@ -1,0 +1,21 @@
+#!/bin/bash
+# Open a phone on this computer via scrcpy (USB if plugged in, otherwise Wi-Fi).
+# The phone's own screen stays off while mirroring; closing the window leaves the
+# phone on its home screen, screen off and locked.
+# Usage: phone [--phone NAME] [extra scrcpy options]
+source "$HOME/.local/lib/phone-continuity/common.sh"
+pc_phone_opt "$@"; shift $PC_SHIFT
+pc_select "$PHONE_ARG" || exit 1
+
+# Reconnect Bluetooth (Extend Unlock) and wake; if still locked, ask for the PIN
+pc_wake_unlock || exit 0   # cancelled or not unlocked
+
+"$SCRCPY" -s "$ADB_ID" \
+  --turn-screen-off --power-off-on-close --stay-awake --keyboard=uhid \
+  --window-title="$NAME" --window-height=750 --screen-off-timeout=1800 \
+  "$@"
+status=$?
+
+# Window closed: leave the phone on its home screen (works even while it's off/locked)
+pc_adb_shell am start -a android.intent.action.MAIN -c android.intent.category.HOME >/dev/null 2>&1
+exit $status

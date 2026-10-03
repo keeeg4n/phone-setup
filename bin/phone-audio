@@ -1,0 +1,88 @@
+#!/bin/bash
+# Toggle streaming this laptop's sound to a phone over Wi-Fi (Audio Share), e.g. to
+# use wired headphones plugged into the phone. Run again to stop.
+# Usage: phone-audio [--phone NAME]
+source "$HOME/.local/lib/phone-continuity/common.sh"
+AS="$HOME/.local/share/audio-share/bin/as-cmd"
+APP=io.github.mkckr0.audio_share_app
+SINK=phone_headphones
+PORT=65530
+STATE="$XDG_RUNTIME_DIR/phone-audio.state"   # as-cmd pid, previous default sink, phone
+
+stop_streaming() {
+  local pid prev phone
+  read -r pid prev phone < "$STATE"
+  kill "$pid" 2>/dev/null
+  [ -n "$prev" ] && pactl set-default-sink "$prev" 2>/dev/null
+  pactl list short modules | awk -v s="sink_name=$SINK" '$0 ~ s {print $1}' | xargs -r -n1 pactl unload-module
+  rm -f "$STATE"
+  if pc_select "$phone" 2>/dev/null; then pc_adb_shell am force-stop $APP >/dev/null 2>&1; fi
+  notify-send -i audio-headphones "Phone Audio" "Stopped — sound is back on the laptop"
+}
+
+if [ -f "$STATE" ]; then stop_streaming; exit 0; fi
+
+pc_phone_opt "$@"; shift $PC_SHIFT
+pc_select "$PHONE_ARG" || exit 1
+[ -x "$AS" ] || { pc_notify "Audio Share server not installed ($AS)"; exit 1; }
+if ! pc_adb_shell pm list packages | tr -d '\r' | grep -qx "package:$APP"; then
+  pc_notify "Install the Audio Share app on $NAME first (phone-setup does it)."; exit 1
+fi
+
+# Laptop address as seen from the phone's network
+PHONE_IP=${WIFI_IP:-$(pc_kdec_ip "$KDEC_ID")}
+LAPTOP_IP=$(ip route get "$PHONE_IP" 2>/dev/null | grep -oE 'src [0-9.]+' | cut -d' ' -f2)
+[ -n "$LAPTOP_IP" ] || { pc_notify "$NAME isn't on the same Wi-Fi network."; exit 1; }
+
+# A dedicated output, made the default so everything plays through the phone
+PREV=$(pactl get-default-sink)
+pactl list short sinks | awk -v s=$SINK '$2==s {f=1} END {exit !f}' || \
+  pactl load-module module-null-sink sink_name=$SINK sink_properties=device.description=Phone-Headphones >/dev/null
+SINK_ID=$(pactl list short sinks | awk -v s=$SINK '$2==s {print $1}')
+pactl set-default-sink $SINK
+pactl list short sink-inputs | cut -f1 | xargs -r -I{} pactl move-sink-input {} $SINK
+
+"$AS" --bind="$LAPTOP_IP:$PORT" -e "$SINK_ID" >/dev/null 2>&1 &
+echo "$! $PREV $NAME" > "$STATE"
+
+# Phone: open Audio Share, point it at this laptop, press play
+pc_wake_unlock || { stop_streaming; exit 1; }
+pc_adb_shell monkey -p $APP -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+sleep 2.5
+ui() { pc_adb_shell 'uiautomator dump /sdcard/.as-ui.xml >/dev/null 2>&1; cat /sdcard/.as-ui.xml; rm /sdcard/.as-ui.xml'; }
+center() {  # center <python-filter> : print "x y" of the first matching node
+  python3 -c '
+import sys, re, xml.etree.ElementTree as ET
+nodes = ET.fromstring(sys.stdin.read()).iter("node")
+for n in nodes:
+    if eval(sys.argv[1]):
+        x1, y1, x2, y2 = map(int, re.findall(r"\d+", n.get("bounds")))
+        print((x1 + x2) // 2, (y1 + y2) // 2); break
+' "$1"
+}
+XML=$(ui)
+HOST_NOW=$(echo "$XML" | python3 -c 'import sys,xml.etree.ElementTree as ET
+e=[n for n in ET.fromstring(sys.stdin.read()).iter("node") if n.get("class")=="android.widget.EditText"]
+print(e[0].get("text") if e else "")')
+if [ "$HOST_NOW" != "$LAPTOP_IP" ]; then
+  read -r x y <<< "$(echo "$XML" | center 'n.get("class")=="android.widget.EditText"')"
+  pc_adb_shell input tap "$x" "$y"; sleep 0.4
+  pc_adb_shell "input keyevent KEYCODE_MOVE_END; for i in \$(seq 1 25); do input keyevent KEYCODE_DEL; done; input text $LAPTOP_IP; input keyevent KEYCODE_BACK"
+  sleep 0.5; XML=$(ui)
+fi
+if ! echo "$XML" | grep -q 'text="Started"'; then
+  read -r x y <<< "$(echo "$XML" | center 'n.get("class")=="android.widget.Button"')"
+  pc_adb_shell input tap "$x" "$y"
+fi
+
+sleep 3
+if ui | grep -q 'text="Started"'; then
+  # Keep the phone dark unless its mirroring window is open
+  pgrep -af "^$SCRCPY .*-s ($SERIAL|$WIFI_IP:$ADB_PORT)( |$)" >/dev/null || \
+    pc_adb_shell "am start -a android.intent.action.MAIN -c android.intent.category.HOME; input keyevent KEYCODE_SLEEP" >/dev/null
+  notify-send -i audio-headphones "Phone Audio" "Laptop sound is playing on $NAME. Run again to stop."
+else
+  notify-send -i audio-headphones "Phone Audio" "Couldn't start Audio Share on $NAME."
+  stop_streaming
+  exit 1
+fi
