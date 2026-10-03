@@ -1,7 +1,7 @@
 # Shared helpers for the phone-* tools. Source this file; don't run it.
 #
 # Each phone set up with `phone-setup` has a file in $PC_DIR/<serial>.conf:
-#   NAME, SERIAL, WIFI_IP, BT_MAC, KDEC_ID
+#   NAME, SERIAL, WIFI_IP, BT_MAC, KDEC_ID, DEVICE_TYPE (phone|tablet)
 # pc_select picks a reachable phone and sets those variables plus
 # ADB_ID (what to pass to adb -s / scrcpy -s), TRANSPORT (usb|wifi) and CONF.
 
@@ -16,7 +16,7 @@ pc_notify() {
 }
 
 pc_load() {
-  NAME="" SERIAL="" WIFI_IP="" BT_MAC="" KDEC_ID=""
+  NAME="" SERIAL="" WIFI_IP="" BT_MAC="" KDEC_ID="" DEVICE_TYPE=""
   CONF="$1"
   # shellcheck disable=SC1090
   source "$1"
@@ -39,12 +39,13 @@ pc_display_name() {
   echo "${out[*]}"
 }
 
-# App-menu launcher for the loaded phone: phone icon, named after the phone. Its
+# App-menu launcher for the loaded phone: phone (or tablet) icon, named after the device. Its
 # StartupWMClass matches the window class `phone` gives that phone's scrcpy window,
 # so the dock and Alt-Tab show this icon and name too.
 pc_write_launcher() {
-  local apps="$HOME/.local/share/applications" label favs
+  local apps="$HOME/.local/share/applications" label favs icon=phone-continuity
   [[ "$SERIAL" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [ "$DEVICE_TYPE" = tablet ] && icon=phone-continuity-tablet
   label=$(pc_display_name "$NAME" | tr -d '[:cntrl:]' | sed 's/\\/\\\\/g')
   mkdir -p "$apps"
   cat > "$apps/phone-$SERIAL.desktop" <<EOF
@@ -52,7 +53,7 @@ pc_write_launcher() {
 Name=$label
 Comment=Show and control $label on this computer
 Exec=$HOME/.local/bin/phone --phone $SERIAL
-Icon=phone-continuity
+Icon=$icon
 Terminal=false
 Type=Application
 Categories=Utility;
