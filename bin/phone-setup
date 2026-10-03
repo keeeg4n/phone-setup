@@ -165,7 +165,9 @@ if [ -n "$BT_MAC" ] && bt_paired; then
 fi
 
 save_conf
+pc_write_launcher && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null
 bold "Done — $NAME is set up."
+echo "  App menu → $(pc_display_name "$NAME")   open it on screen"
 echo "  phone          open it on screen        phone-cam     use as webcam"
 echo "  phone-files    browse its storage       phone-photo   take a photo into a folder"
 echo "  phone-unlock   enter the PIN            phone-audio   laptop sound on the phone"

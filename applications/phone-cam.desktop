@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Phone Camera
-Comment=Use the moto g13 as a webcam (click again to stop)
+Comment=Use your phone as a webcam (click again to stop)
 Exec=@BINDIR@/phone-cam
 Icon=camera-web
 Terminal=false

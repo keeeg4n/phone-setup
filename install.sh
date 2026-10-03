@@ -81,11 +81,10 @@ else
   tar xzf "$TMP/$tarball" -C "$SHARE/scrcpy" --strip-components=1
   ok "Downloaded and checksum-verified"
 fi
-mkdir -p "$BIN" "$SHARE/man/man1" "$SHARE/icons/hicolor/256x256/apps"
+mkdir -p "$BIN" "$SHARE/man/man1"
 ln -sf "$SHARE/scrcpy/scrcpy" "$BIN/scrcpy"
 ln -sf "$SHARE/scrcpy/adb" "$BIN/adb"
 cp "$SHARE/scrcpy/scrcpy.1" "$SHARE/man/man1/" 2>/dev/null || true
-cp "$SHARE/scrcpy/icon.png" "$SHARE/icons/hicolor/256x256/apps/scrcpy.png" 2>/dev/null || true
 
 # ── 3. Audio Share (laptop sound → phone) ──────────────────────────────────
 bold "3. Audio Share $AUDIOSHARE_VERSION"
@@ -125,6 +124,12 @@ for f in "$SRC"/applications/*.desktop; do
   fi
   sed "s|@BINDIR@|$BIN|g" "$f" > "$SHARE/applications/$name"
 done
+install -Dm644 "$SRC/icons/phone-continuity.svg" "$SHARE/icons/hicolor/scalable/apps/phone-continuity.svg"
+gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
+# One launcher per phone already set up (phone-setup makes them for new phones)
+( set +eu; source "$LIB/common.sh"
+  while read -r c; do [ -n "$c" ] && pc_load "$c" && pc_write_launcher; done <<< "$(pc_confs)" )
+rm -f "$SHARE/applications/phone-scrcpy.desktop"   # old generic launcher
 update-desktop-database "$SHARE/applications" 2>/dev/null || true
 ok "Commands in $BIN and app-menu entries"
 

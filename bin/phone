@@ -10,9 +10,11 @@ pc_select "$PHONE_ARG" || exit 1
 # Reconnect Bluetooth (Extend Unlock) and wake; if still locked, ask for the PIN
 pc_wake_unlock || exit 0   # cancelled or not unlocked
 
+# Own window class per phone, so the dock shows that phone's launcher (icon + name)
+SDL_VIDEO_WAYLAND_WMCLASS="phone-$SERIAL" SDL_VIDEO_X11_WMCLASS="phone-$SERIAL" \
 "$SCRCPY" -s "$ADB_ID" \
   --turn-screen-off --power-off-on-close --stay-awake --keyboard=uhid \
-  --window-title="$NAME" --window-height=750 --screen-off-timeout=1800 \
+  --window-title="$(pc_display_name "$NAME")" --window-height=750 --screen-off-timeout=1800 \
   "$@"
 status=$?
 
