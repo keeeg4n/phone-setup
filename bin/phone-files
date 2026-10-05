@@ -1,15 +1,13 @@
 #!/bin/bash
-# Mount a phone's storage via KDE Connect and open it in Files.
+# Mount a phone's storage via GSConnect / KDE Connect and open it in Files.
 # Usage: phone-files [--phone NAME]
 source "$HOME/.local/lib/phone-continuity/common.sh"
 pc_phone_opt "$@"; shift $PC_SHIFT
-pc_select_kdec "$PHONE_ARG" || exit 1
+pc_select_link "$PHONE_ARG" || exit 1
 
-OBJ=/modules/kdeconnect/devices/$KDEC_ID/sftp
-DIR=/run/user/$(id -u)/$KDEC_ID/storage/emulated/0
-gdbus call --session --dest org.kde.kdeconnect --object-path "$OBJ" \
-  --method org.kde.kdeconnect.device.sftp.mountAndWait >/dev/null 2>&1
-for i in 1 2 3 4 5 6; do [ -d "$DIR/DCIM" ] && break; sleep 1; done   # mount can lag a moment
+DIR=$(pc_link_storage "$KDEC_ID")
+pc_link_mount "$KDEC_ID"
+for i in $(seq 10); do [ -d "$DIR/DCIM" ] && break; sleep 1; done   # mount can lag a moment
 if [ -d "$DIR/DCIM" ]; then
   xdg-open "$DIR"
 else

@@ -58,5 +58,5 @@ if [ "${1:-}" = "--purge" ]; then
 else
   echo "Removed. Phone settings kept in ~/.config/phone-continuity (use --purge to delete)."
 fi
-echo "Not touched: KDE Connect and Bluetooth pairings, the v4l2loopback driver, system packages"
+echo "Not touched: GSConnect / KDE Connect and Bluetooth pairings, the v4l2loopback driver, system packages"
 echo "(including rQuickShare: remove it with your package manager, package r-quick-share)."

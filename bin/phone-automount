@@ -1,29 +1,22 @@
 #!/bin/bash
-# Keep each set-up phone's storage mounted (via KDE Connect) whenever the phone is
-# reachable, so its Files sidebar bookmark always works. Runs as a user service.
+# Keep each set-up phone's storage mounted (via GSConnect / KDE Connect) whenever the
+# phone is reachable, so its Files sidebar bookmark always works. Runs as a user service.
 source "$HOME/.local/lib/phone-continuity/common.sh"
-
-sftp() {   # sftp <kdec-id> <method>
-  gdbus call --session --dest org.kde.kdeconnect \
-    --object-path "/modules/kdeconnect/devices/$1/sftp" \
-    --method "org.kde.kdeconnect.device.sftp.$2" 2>/dev/null
-}
 
 while true; do
   while read -r c; do
     [ -n "$c" ] || continue
     pc_load "$c"
     [ -n "$KDEC_ID" ] || continue
-    pc_kdec_reachable "$KDEC_ID" || continue
-    if sftp "$KDEC_ID" isMounted | grep -q true; then
-      # KDE Connect keeps saying "mounted" after the phone's sftp server goes away,
-      # leaving a dead sshfs that gives I/O errors and hangs Files. Remount it then.
-      mp=$(sftp "$KDEC_ID" mountPoint | sed -n "s/^('\(.*\)',)$/\1/p")
-      [ -n "$mp" ] && timeout 5 stat "$mp/storage/emulated/0" >/dev/null 2>&1 && continue
-      sftp "$KDEC_ID" unmount >/dev/null
+    pc_link_reachable "$KDEC_ID" || continue
+    if pc_link_mounted "$KDEC_ID"; then
+      # The link can keep saying "mounted" after the phone's sftp server goes away,
+      # leaving a dead mount that gives I/O errors and hangs Files. Remount it then.
+      timeout 5 stat "$(pc_link_storage "$KDEC_ID")" >/dev/null 2>&1 && continue
+      pc_link_unmount "$KDEC_ID"
       sleep 2
     fi
-    sftp "$KDEC_ID" mountAndWait >/dev/null
+    pc_link_mount "$KDEC_ID"
   done <<< "$(pc_confs)"
   sleep 20
 done

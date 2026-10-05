@@ -1,5 +1,5 @@
 [Unit]
-Description=Keep phone storage mounted via KDE Connect (for the Files sidebar bookmarks)
+Description=Keep phone storage mounted via GSConnect or KDE Connect (for the Files sidebar bookmarks)
 After=graphical-session.target
 
 [Service]

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install phone-setup: Android ↔ Linux continuity (mirroring, webcam, photos,
-# files, calls, audio) built on scrcpy, KDE Connect, PipeWire and Audio Share.
+# files, calls, audio) built on scrcpy, GSConnect or KDE Connect, PipeWire and Audio Share.
 # Supports Fedora (dnf) and Linux Mint / Ubuntu / Debian (apt), with GNOME Files
 # or Nemo. Safe to re-run (updates in place).
 #
@@ -58,18 +58,37 @@ else PM=none; fi
 FILE_MANAGERS=()
 command -v nautilus >/dev/null && FILE_MANAGERS+=(nautilus)
 command -v nemo >/dev/null && FILE_MANAGERS+=(nemo)
+# Phone link: GSConnect on GNOME (a Shell extension, no KDE libraries), KDE Connect elsewhere
+if command -v gnome-shell >/dev/null; then LINK=gsconnect; else LINK=kdeconnect; fi
+GSC_UUID=gsconnect@andyholmes.github.io
+
+# enable_gnome_ext <uuid>: a new extension is only picked up at the next login on
+# Wayland, so also enable it in the settings directly when gnome-extensions doesn't
+# know it yet. Returns 1 in that case (it works after logging back in).
+enable_gnome_ext() {
+  gnome-extensions enable "$1" 2>/dev/null && return 0
+  local cur new
+  cur=$(gsettings get org.gnome.shell enabled-extensions)
+  if [[ "$cur" != *"'$1'"* ]]; then
+    if [[ "$cur" == *"[]"* ]]; then new="['$1']"; else new="${cur%]}, '$1']"; fi
+    gsettings set org.gnome.shell enabled-extensions "$new"
+  fi
+  return 1
+}
 
 # ── 1. System packages ─────────────────────────────────────────────────────
 bold "1. System packages (sudo)"
 case $PM in
   dnf)
-    pkgs=(kde-connect sshfs zenity libnotify pulseaudio-utils bluez python3-gobject curl tar unzip)
+    if [ $LINK = gsconnect ]; then pkgs=(gnome-shell-extension-gsconnect); else pkgs=(kde-connect); fi
+    pkgs+=(sshfs zenity libnotify pulseaudio-utils bluez python3-gobject curl tar unzip)
     [[ " ${FILE_MANAGERS[*]} " == *" nautilus "* ]] && pkgs+=(nautilus-python)
     [[ " ${FILE_MANAGERS[*]} " == *" nemo "* ]] && pkgs+=(nemo-python)
     quiet sudo dnf install -y --setopt=install_weak_deps=False "${pkgs[@]}"
     ;;
   apt)
-    pkgs=(kdeconnect sshfs zenity libnotify-bin pulseaudio-utils bluez python3-gi
+    if [ $LINK = gsconnect ]; then pkgs=(gnome-shell-extension-gsconnect); else pkgs=(kdeconnect); fi
+    pkgs+=(sshfs zenity libnotify-bin pulseaudio-utils bluez python3-gi
           desktop-file-utils curl tar unzip)
     [[ " ${FILE_MANAGERS[*]} " == *" nautilus "* ]] && pkgs+=(python3-nautilus)
     [[ " ${FILE_MANAGERS[*]} " == *" nemo "* ]] && pkgs+=(nemo-python)
@@ -77,12 +96,41 @@ case $PM in
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${pkgs[@]}" >/dev/null
     ;;
   none)
-    warn "Neither dnf nor apt found — install these yourself: KDE Connect, sshfs, zenity,"
+    warn "Neither dnf nor apt found — install these yourself: GSConnect (GNOME) or KDE Connect, sshfs, zenity,"
     warn "notify-send, pactl, bluez, Python GObject bindings, nautilus-python or nemo-python."
     pkgs=()
     ;;
 esac
 [ ${#pkgs[@]} -gt 0 ] && ok "${pkgs[*]}"
+
+if [ $LINK = gsconnect ]; then
+  # KDE Connect and GSConnect both listen on the same port, so only one can run.
+  # Removing KDE Connect also frees the KDE libraries it pulled in.
+  case $PM in
+    dnf) kdec_pkgs=$(rpm -qa --qf '%{NAME}\n' 'kde-connect*' kdeconnectd 2>/dev/null | sort -u | xargs || true) ;;
+    apt) kdec_pkgs=$(dpkg-query -W -f '${Status} ${Package}\n' 'kdeconnect*' 2>/dev/null | awk '/ installed /{print $4}' | xargs || true) ;;
+    *)   kdec_pkgs="" ;;
+  esac
+  if [ -n "$kdec_pkgs" ]; then
+    read -rp "  KDE Connect is installed and clashes with GSConnect. Remove it and the KDE libraries it uses (sudo)? [Y/n] " a
+    if [[ ! "$a" =~ ^[Nn] ]]; then
+      pkill -x kdeconnectd 2>/dev/null || true
+      if [ $PM = dnf ]; then
+        quiet sudo dnf remove -y $kdec_pkgs
+      else
+        sudo DEBIAN_FRONTEND=noninteractive apt-get remove --autoremove -y -qq $kdec_pkgs >/dev/null
+      fi
+      ok "Removed $kdec_pkgs"
+    else
+      warn "Kept KDE Connect — quit it (and stop it starting at login) or GSConnect can't connect."
+    fi
+  fi
+  if enable_gnome_ext $GSC_UUID; then
+    ok "GSConnect turned on"
+  else
+    warn "GSConnect starts after you log out and back in — run phone-setup after that."
+  fi
+fi
 
 # ── 2. scrcpy (+ bundled adb) ──────────────────────────────────────────────
 bold "2. scrcpy $SCRCPY_VERSION"
@@ -252,16 +300,8 @@ EOF
     dest="$SHARE/gnome-shell/extensions/$RQS_UUID"
     rm -rf "$dest"; mkdir -p "$dest"
     install -m 644 "$SRC/top-bar/gnome/$RQS_UUID"/* "$dest/"
-    # A new extension is only picked up at the next login on Wayland, so also enable it
-    # in the settings directly when gnome-extensions doesn't know it yet.
-    if ! gnome-extensions enable "$RQS_UUID" 2>/dev/null; then
-      cur=$(gsettings get org.gnome.shell enabled-extensions)
-      if [[ "$cur" != *"'$RQS_UUID'"* ]]; then
-        if [[ "$cur" == *"[]"* ]]; then new="['$RQS_UUID']"; else new="${cur%]}, '$RQS_UUID']"; fi
-        gsettings set org.gnome.shell enabled-extensions "$new"
-      fi
+    enable_gnome_ext "$RQS_UUID" ||
       warn "Quick Share appears in Quick Settings after you log out and back in."
-    fi
     ok "Quick Settings tile (GNOME)"
   fi
   if [ "$QS_TILE" = yes ] && command -v cinnamon >/dev/null; then
@@ -356,7 +396,7 @@ cat <<EOF
 
       phone-setup
 
-  It pairs KDE Connect and Bluetooth, turns on wireless debugging and walks you
+  It pairs $( [ $LINK = gsconnect ] && echo GSConnect || echo "KDE Connect") and Bluetooth, turns on wireless debugging and walks you
   through Extend Unlock. Re-run it whenever the phone restarts.
 EOF
 case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN is not on your PATH — log out and back in (or add it) to use the commands from a terminal." ;; esac

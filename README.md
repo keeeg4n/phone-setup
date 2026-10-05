@@ -5,7 +5,8 @@ mirror and control the phone, use it as a webcam, take photos straight into a fo
 browse its files, take and make calls, and play the laptop's sound through the phone.
 All of it is glue around existing open-source tools:
 [scrcpy](https://github.com/Genymobile/scrcpy),
-[KDE Connect](https://kdeconnect.kde.org/),
+[GSConnect](https://github.com/GSConnect/gnome-shell-extension-gsconnect) on GNOME or
+[KDE Connect](https://kdeconnect.kde.org/) elsewhere,
 PipeWire's Bluetooth telephony, and
 [Audio Share](https://github.com/mkckr0/audio-share).
 
@@ -26,7 +27,7 @@ manager — see [Supported systems](#supported-systems).
 | **Phone storage** in the Files sidebar, kept connected | Sidebar bookmark, or *Phone Files* |
 | **Calls** — ring + Answer/Decline on the laptop; call audio on the laptop's speakers or Bluetooth earbuds | Automatic; *Phone Dialer*, *Call History* |
 | **Laptop sound on the phone** (e.g. wired headphones on the phone) | App menu → *Phone Audio* (toggle) |
-| **Clipboard, notifications, SMS, send files** | KDE Connect |
+| **Clipboard, notifications, SMS, send files** | GSConnect (GNOME) or KDE Connect, with the KDE Connect app on the phone |
 | **Quick Share** (optional) — AirDrop-style sending/receiving with *any* nearby Android device, through [rQuickShare](https://github.com/Martichou/rquickshare). Off by default; only runs (and is only visible) while switched on | Top bar (optional switch, asked during install): GNOME Quick Settings → *Quick Share*, or the Cinnamon panel icon; otherwise App menu → *RQuickShare*. Phone: *Share → Quick Share* |
 | **Several phones** — every tool finds whichever set-up phone is reachable (asks if several) | `--phone NAME` on any command |
 
@@ -40,8 +41,9 @@ cd phone-setup
 
 The installer (asks for `sudo` for packages):
 
-1. installs KDE Connect, `sshfs`, `zenity`, `pactl` and the file-manager plugin bindings
-   with `dnf` or `apt`
+1. installs GSConnect on GNOME (offering to remove KDE Connect, which clashes with it,
+   along with the KDE libraries it pulled in) or KDE Connect elsewhere, plus `sshfs`,
+   `zenity`, `pactl` and the file-manager plugin bindings, with `dnf` or `apt`
 2. downloads **scrcpy 3.3.4** and **Audio Share 0.3.4** from their GitHub releases and
    checks them against the published SHA-256 checksums
 3. puts the `phone-*` commands in `~/.local/bin`, adds menu entries and the right-click
@@ -57,8 +59,8 @@ Then plug the phone in by USB and run:
 phone-setup
 ```
 
-`phone-setup` turns on wireless debugging, installs and pairs KDE Connect, installs the
-Audio Share app, pairs Bluetooth and walks you through **Extend Unlock**. It skips steps
+`phone-setup` turns on wireless debugging, installs the KDE Connect app on the phone and
+pairs it with GSConnect / KDE Connect, installs the Audio Share app, pairs Bluetooth and walks you through **Extend Unlock**. It skips steps
 that are already done, so re-run it any time — in particular **after the phone restarts**
 (Android turns wireless debugging off on every reboot; only USB can turn it back on).
 
@@ -86,9 +88,11 @@ Each accepts `--phone NAME` to choose a phone when several are set up.
 ## How it works
 
 - Each phone gets `~/.config/phone-continuity/devices/<serial>.conf` (name, serial,
-  Wi-Fi address, Bluetooth address, KDE Connect ID), written by `phone-setup`.
+  Wi-Fi address, Bluetooth address, KDE Connect device ID), written by `phone-setup`.
 - `lib/common.sh` finds a reachable phone: USB first, then its saved Wi-Fi address, then
-  the address KDE Connect reports (and remembers it if the router changed it).
+  the address GSConnect / KDE Connect reports (and remembers it if the router changed it).
+- GSConnect is used whenever its GNOME Shell extension is installed, KDE Connect otherwise.
+  Both speak the same protocol and use the same Android app and device IDs.
 - **Extend Unlock only keeps a phone unlocked** — after the laptop was off it needs the PIN
   once, which `phone` asks for in a dialog.
 - A phone can only hold a Bluetooth link to the laptop through its audio profiles, which
@@ -107,8 +111,13 @@ Each accepts `--phone NAME` to choose a phone when several are set up.
 Installer tested on Fedora 44 and in Linux Mint containers (Ubuntu 24.04 and 26.04 bases).
 
 **Desktops:** GNOME (Files) and Cinnamon (Nemo) get the right-click *Take Photo* item and
-the sidebar bookmark. On **KDE Plasma** everything else works; Dolphin shows KDE Connect
-phones by itself.
+the sidebar bookmark. GNOME uses GSConnect, so no KDE libraries are installed; Cinnamon and
+other desktops use KDE Connect. On **KDE Plasma** everything else works; Dolphin shows KDE
+Connect phones by itself.
+
+**Switching an existing GNOME setup from KDE Connect:** re-run `./install.sh` (it offers to
+remove KDE Connect), log out and back in, then re-run `phone-setup` to pair GSConnect and
+move the Files bookmark.
 
 On Mint/Ubuntu with **Secure Boot**, installing the webcam driver asks you to set a
 password; reboot and choose *Enroll MOK* to allow the driver to load.
@@ -130,5 +139,5 @@ password; reboot and choose *Enroll MOK* to allow the driver to load.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). scrcpy, KDE Connect and Audio Share are separate projects
+MIT — see [LICENSE](LICENSE). scrcpy, GSConnect, KDE Connect and Audio Share are separate projects
 under their own licenses and are downloaded, not bundled.

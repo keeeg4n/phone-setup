@@ -30,7 +30,7 @@ if ! pc_adb_shell pm list packages | tr -d '\r' | grep -qx "package:$APP"; then
 fi
 
 # Laptop address as seen from the phone's network
-PHONE_IP=${WIFI_IP:-$(pc_kdec_ip "$KDEC_ID")}
+PHONE_IP=${WIFI_IP:-$(pc_link_ip "$KDEC_ID")}
 LAPTOP_IP=$(ip route get "$PHONE_IP" 2>/dev/null | grep -oE 'src [0-9.]+' | cut -d' ' -f2)
 [ -n "$LAPTOP_IP" ] || { pc_notify "$NAME isn't on the same Wi-Fi network."; exit 1; }
 

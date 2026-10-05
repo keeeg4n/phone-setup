@@ -86,46 +86,69 @@ else
 fi
 save_conf
 
-# ── 3. KDE Connect (clipboard, notifications, files) ───────────────────────
-bold "3. KDE Connect"
-PKG=org.kde.kdeconnect_tp
-kdec_installed() { pc_adb_shell pm list packages | tr -d '\r' | grep -qx "package:$PKG"; }
-kdec_seen()      { kdeconnect-cli -l 2>/dev/null | grep -q " on $WIFI_IP via LAN"; }
-if ! kdec_installed; then
-  pc_adb_shell am start -a android.intent.action.VIEW -d "market://details?id=$PKG" >/dev/null
-  warn "The Play Store is open on the phone — install KDE Connect."
-  wait_for 600 "waiting for KDE Connect to be installed" kdec_installed \
-    || warn "Not installed — skipping KDE Connect for now."
+# ── 3. Phone link: GSConnect (GNOME) or KDE Connect (clipboard, notifications, files)
+bold "3. $PC_LINK_NAME"
+PKG=org.kde.kdeconnect_tp   # the Android app, for both
+app_installed() { pc_adb_shell pm list packages | tr -d '\r' | grep -qx "package:$PKG"; }
+link_seen()     { [ -n "$(pc_link_find "$WIFI_IP")" ]; }
+link_running()  {
+  [ $PC_LINK = kdeconnect ] && return 0
+  gdbus call --session --dest $GSC_BUS --object-path /org/gnome/Shell/Extensions/GSConnect \
+    --method org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1
+}
+if ! link_running; then
+  warn "GSConnect isn't running. Turn it on in the Extensions app (log out and back in"
+  warn "first if it was just installed), then re-run phone-setup."
+elif [ -z "$WIFI_IP" ]; then
+  warn "$PC_LINK_NAME needs the phone on Wi-Fi — skipping for now."
+else
+  if ! app_installed; then
+    pc_adb_shell am start -a android.intent.action.VIEW -d "market://details?id=$PKG" >/dev/null
+    warn "The Play Store is open on the phone — install KDE Connect."
+    wait_for 600 "waiting for KDE Connect to be installed" app_installed \
+      || warn "Not installed — skipping $PC_LINK_NAME for now."
+  fi
 fi
 
-if kdec_installed; then
+if link_running && [ -n "$WIFI_IP" ] && app_installed; then
   pc_adb_shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   pc_adb_shell appops set $PKG MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 && ok "File access allowed for KDE Connect"
 
-  find_kdec_id() {   # match by the phone's Wi-Fi address
-    kdeconnect-cli -l 2>/dev/null | sed -n "s/^- .*: \([0-9a-f_]*\) on $WIFI_IP via LAN.*/\1/p" | head -1
-  }
-  if [ -z "$KDEC_ID" ] || ! kdeconnect-cli -l --id-only 2>/dev/null | grep -qx "$KDEC_ID"; then
-    kdeconnect-cli --refresh >/dev/null 2>&1
-    wait_for 60 "looking for $NAME in KDE Connect" kdec_seen
-    KDEC_ID=$(find_kdec_id)
+  if ! pc_link_known "$KDEC_ID"; then
+    pc_link_discover "$WIFI_IP"
+    wait_for 60 "looking for $NAME in $PC_LINK_NAME" link_seen
+    KDEC_ID=$(pc_link_find "$WIFI_IP")
   fi
 
   if [ -z "$KDEC_ID" ]; then
-    warn "KDE Connect couldn't find the phone. Check both are on the same Wi-Fi, then re-run."
+    warn "$PC_LINK_NAME couldn't find the phone. Check both are on the same Wi-Fi, then re-run."
   else
     save_conf
-    if pc_kdec_reachable "$KDEC_ID"; then
-      ok "Paired with KDE Connect"
+    if pc_link_reachable "$KDEC_ID"; then
+      ok "Paired with $PC_LINK_NAME"
     else
-      kdeconnect-cli --pair -d "$KDEC_ID" >/dev/null 2>&1
+      pc_link_pair "$KDEC_ID"
       warn "Accept the pairing request on the phone."
-      wait_for 120 "waiting for you to accept" pc_kdec_reachable "$KDEC_ID" \
-        && ok "Paired with KDE Connect" || warn "Not paired yet — re-run phone-setup to try again."
+      wait_for 120 "waiting for you to accept" pc_link_reachable "$KDEC_ID" \
+        && ok "Paired with $PC_LINK_NAME" || warn "Not paired yet — re-run phone-setup to try again."
     fi
+    # Calls are handled by phone-calls; the link's own call alerts would come twice
+    if [ $PC_LINK = gsconnect ] && [ -f "$HOME/.config/systemd/user/phone-calls.service" ]; then
+      key="$GSC_DCONF/device/$KDEC_ID/disabled-plugins"
+      cur=$(dconf read "$key"); cur=${cur#@as }
+      if [[ "$cur" != *"'telephony'"* ]]; then
+        if [ -z "$cur" ] || [ "$cur" = "[]" ]; then cur="['telephony']"; else cur="${cur%]}, 'telephony']"; fi
+        dconf write "$key" "$cur" && ok "Call alerts left to Phone Calls (GSConnect's turned off)"
+      fi
+    fi
+    # Files sidebar bookmark (replaces one for an older path, e.g. from KDE Connect)
     BM="$HOME/.config/gtk-3.0/bookmarks"; mkdir -p "$(dirname "$BM")"; touch "$BM"
-    LINE="file:///run/user/$(id -u)/$KDEC_ID/storage/emulated/0 $NAME"
-    grep -qF "$LINE" "$BM" || { echo "$LINE" >> "$BM"; ok "Added \"$NAME\" to the Files sidebar"; }
+    LINE="file://$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$(pc_link_storage "$KDEC_ID")") $NAME"
+    if ! grep -qxF "$LINE" "$BM"; then
+      grep -vxE "file://.*/storage/emulated/0 $(sed 's/[][\\.*^$+?(){}|]/\\&/g' <<< "$NAME")" "$BM" > "$BM.tmp"
+      echo "$LINE" >> "$BM.tmp" && mv "$BM.tmp" "$BM"
+      ok "Added \"$NAME\" to the Files sidebar"
+    fi
   fi
 fi
 
