@@ -7,7 +7,7 @@ source "$HOME/.local/lib/phone-continuity/common.sh"
 pc_phone_opt "$@"; shift $PC_SHIFT
 pc_select "$PHONE_ARG" || exit 1
 
-# Reconnect Bluetooth (Extend Unlock) and wake; if still locked, ask for the PIN
+# Wake the phone; if it is PIN-locked, ask for the PIN
 pc_wake_unlock || exit 0   # cancelled or not unlocked
 
 # Own window class per phone, so the dock shows that phone's launcher (icon + name)

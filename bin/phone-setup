@@ -1,5 +1,5 @@
 #!/bin/bash
-# Set up (or repair) a phone for all the phone-* tools. Plug the phone in by USB first.
+# Set up (or repair) a phone for mirroring with `phone`. Plug the phone in by USB first.
 # Safe to re-run: steps that are already done are skipped. Re-run it after the phone
 # restarts to turn Wi-Fi debugging back on.
 source "$HOME/.local/lib/phone-continuity/common.sh"
@@ -8,7 +8,6 @@ mkdir -p "$PC_DIR"
 bold() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
-ask()  { local a; read -rp "  $1 [Y/n] " a; [[ ! "$a" =~ ^[Nn] ]]; }
 # wait_for <seconds> <message> <command...>: poll until the command succeeds
 wait_for() {
   local secs=$1 msg=$2; shift 2
@@ -51,8 +50,6 @@ if [ -f "$CONF" ]; then pc_load "$CONF"; ok "Known phone: $NAME (re-checking its
 DETECTED_NAME=$(pc_adb_shell settings get global device_name | tr -d '\r')
 [ -z "$DETECTED_NAME" ] || [ "$DETECTED_NAME" = "null" ] && DETECTED_NAME=$(pc_adb_shell getprop ro.product.model | tr -d '\r')
 NAME=${NAME:-$DETECTED_NAME}
-BT_MAC=$(pc_adb_shell settings get secure bluetooth_address | tr -d '\r')
-[ "$BT_MAC" = "null" ] && BT_MAC=""
 DEVICE_TYPE=phone
 pc_adb_shell getprop ro.build.characteristics | grep -q tablet && DEVICE_TYPE=tablet
 ok "$NAME ($DEVICE_TYPE, serial $SERIAL, Android $(pc_adb_shell getprop ro.build.version.release | tr -d '\r'))"
@@ -62,8 +59,6 @@ save_conf() {
 NAME="$NAME"
 SERIAL="$SERIAL"
 WIFI_IP="$WIFI_IP"
-BT_MAC="$BT_MAC"
-KDEC_ID="$KDEC_ID"
 DEVICE_TYPE="$DEVICE_TYPE"
 EOF
 }
@@ -86,92 +81,8 @@ else
 fi
 save_conf
 
-# ── 3. KDE Connect (clipboard, notifications, files) ───────────────────────
-bold "3. KDE Connect"
-PKG=org.kde.kdeconnect_tp
-kdec_installed() { pc_adb_shell pm list packages | tr -d '\r' | grep -qx "package:$PKG"; }
-kdec_seen()      { kdeconnect-cli -l 2>/dev/null | grep -q " on $WIFI_IP via LAN"; }
-if ! kdec_installed; then
-  pc_adb_shell am start -a android.intent.action.VIEW -d "market://details?id=$PKG" >/dev/null
-  warn "The Play Store is open on the phone — install KDE Connect."
-  wait_for 600 "waiting for KDE Connect to be installed" kdec_installed \
-    || warn "Not installed — skipping KDE Connect for now."
-fi
-
-if kdec_installed; then
-  pc_adb_shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-  pc_adb_shell appops set $PKG MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 && ok "File access allowed for KDE Connect"
-
-  find_kdec_id() {   # match by the phone's Wi-Fi address
-    kdeconnect-cli -l 2>/dev/null | sed -n "s/^- .*: \([0-9a-f_]*\) on $WIFI_IP via LAN.*/\1/p" | head -1
-  }
-  if [ -z "$KDEC_ID" ] || ! kdeconnect-cli -l --id-only 2>/dev/null | grep -qx "$KDEC_ID"; then
-    kdeconnect-cli --refresh >/dev/null 2>&1
-    wait_for 60 "looking for $NAME in KDE Connect" kdec_seen
-    KDEC_ID=$(find_kdec_id)
-  fi
-
-  if [ -z "$KDEC_ID" ]; then
-    warn "KDE Connect couldn't find the phone. Check both are on the same Wi-Fi, then re-run."
-  else
-    save_conf
-    if pc_kdec_reachable "$KDEC_ID"; then
-      ok "Paired with KDE Connect"
-    else
-      kdeconnect-cli --pair -d "$KDEC_ID" >/dev/null 2>&1
-      warn "Accept the pairing request on the phone."
-      wait_for 120 "waiting for you to accept" pc_kdec_reachable "$KDEC_ID" \
-        && ok "Paired with KDE Connect" || warn "Not paired yet — re-run phone-setup to try again."
-    fi
-    BM="$HOME/.config/gtk-3.0/bookmarks"; mkdir -p "$(dirname "$BM")"; touch "$BM"
-    LINE="file:///run/user/$(id -u)/$KDEC_ID/storage/emulated/0 $NAME"
-    grep -qF "$LINE" "$BM" || { echo "$LINE" >> "$BM"; ok "Added \"$NAME\" to the Files sidebar"; }
-  fi
-fi
-
-# ── 4. Bluetooth + Extend Unlock (no PIN while near this laptop) ───────────
-bold "3b. Audio Share (laptop sound on the phone)"
-AS_APK="$HOME/.local/share/audio-share/audio-share-app.apk"
-if pc_adb_shell pm list packages | tr -d '\r' | grep -qx "package:io.github.mkckr0.audio_share_app"; then
-  ok "Audio Share app installed"
-elif [ -f "$AS_APK" ] && "$ADB" -s "$ADB_ID" install -r "$AS_APK" >/dev/null 2>&1; then
-  ok "Installed the Audio Share app"
-else
-  warn "Couldn't install the Audio Share app — Phone Audio won't work on this phone."
-fi
-
-bold "4. Bluetooth & Extend Unlock"
-bt_paired() { bluetoothctl info "$BT_MAC" 2>/dev/null | grep -q "Paired: yes"; }
-if [ -z "$BT_MAC" ]; then
-  warn "Couldn't read the phone's Bluetooth address — skipping."
-elif bt_paired; then
-  ok "Already paired over Bluetooth"
-elif ask "Pair over Bluetooth so the phone can stay unlocked near this laptop?"; then
-  bluetoothctl power on >/dev/null; bluetoothctl pairable on >/dev/null; bluetoothctl discoverable on >/dev/null
-  pc_adb_shell am start -a android.settings.BLUETOOTH_SETTINGS >/dev/null
-  warn "On the phone: Pair new device → \"$(bluetoothctl show | sed -n 's/^\s*Alias: //p')\" → confirm the code on both."
-  wait_for 180 "waiting for pairing" bt_paired \
-    && ok "Paired over Bluetooth" || warn "Not paired — re-run phone-setup to try again."
-  bluetoothctl discoverable off >/dev/null
-fi
-if [ -n "$BT_MAC" ] && bt_paired; then
-  bluetoothctl trust "$BT_MAC" >/dev/null
-  # Current state (not history): Google's trust agent is managing trust right now
-  if pc_adb_shell dumpsys trust 2>/dev/null | grep -A1 "auth.trustagent.GoogleTrustAgent$" | grep -q "managingTrust=1"; then
-    ok "Extend Unlock is active"
-  elif ask "Set up Extend Unlock (phone stays unlocked while connected to this laptop)?"; then
-    pc_adb_shell am start -a android.settings.SECURITY_SETTINGS >/dev/null
-    warn "On the phone: More security settings → Extend Unlock (or Smart Lock) → Trusted devices"
-    warn "→ Add trusted device → choose this laptop."
-    read -rp "  Press Enter when done… "
-  fi
-fi
-
-save_conf
 pc_write_launcher && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null
 bold "Done — $NAME is set up."
 echo "  App menu → $(pc_display_name "$NAME")   open it on screen"
-echo "  phone          open it on screen        phone-cam     use as webcam"
-echo "  phone-files    browse its storage       phone-photo   take a photo into a folder"
-echo "  phone-unlock   enter the PIN            phone-audio   laptop sound on the phone"
+echo "  phone          open it on screen        phone-unlock  enter the PIN"
 echo "  phone-setup    re-run after the phone restarts"

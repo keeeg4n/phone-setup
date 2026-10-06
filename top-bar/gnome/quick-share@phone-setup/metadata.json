@@ -1,7 +1,0 @@
-{
-  "uuid": "quick-share@phone-setup",
-  "name": "Quick Share",
-  "description": "Quick Settings toggle for Quick Share (Android's AirDrop) through rQuickShare: on = this laptop shows up in nearby Android phones' Share menu. Part of phone-setup.",
-  "url": "https://github.com/keeeg4n/phone-setup",
-  "shell-version": ["45", "46", "47", "48", "49", "50"]
-}

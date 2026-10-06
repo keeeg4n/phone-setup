@@ -1,33 +1,33 @@
 #!/bin/bash
 # Remove phone-setup from this user account. Phone settings files are kept unless
-# you pass --purge. System packages and the webcam driver are left installed.
+# you pass --purge. System packages are left installed.
+#   ./uninstall.sh --old-features   only remove what older versions added beyond
+#                                   mirroring (install.sh runs this)
 set -u
 BIN="$HOME/.local/bin"
 SHARE="$HOME/.local/share"
 
+# ── Features older versions had: webcam, photos, files, calls, audio, Quick Share
 for s in phone-automount phone-bt-noaudio phone-calls; do
-  systemctl --user disable --now "$s.service" 2>/dev/null
+  systemctl --user disable --now "$s.service" >/dev/null 2>&1
   rm -f "$HOME/.config/systemd/user/$s.service"
 done
-systemctl --user daemon-reload
-
-for f in phone phone-setup phone-unlock phone-cam phone-photo phone-files phone-automount \
-         phone-bt-noaudio phone-audio phone-calls-daemon phone-dial phone-call-log; do
+systemctl --user daemon-reload 2>/dev/null
+for f in phone-cam phone-photo phone-files phone-automount phone-bt-noaudio phone-audio \
+         phone-calls-daemon phone-dial phone-call-log; do
   rm -f "$BIN/$f"
 done
-rm -f "$BIN/scrcpy" "$BIN/adb"
-rm -rf "$HOME/.local/lib/phone-continuity" "$SHARE/scrcpy" "$SHARE/audio-share"
+rm -rf "$SHARE/audio-share"
 rm -f "$SHARE/nautilus-python/extensions/phone_photo.py" "$SHARE/nemo-python/extensions/phone_photo.py"
 for f in phone-scrcpy phone-cam phone-files phone-audio phone-dialer phone-call-log; do
   rm -f "$SHARE/applications/$f.desktop"
 done
-grep -lxE "Icon=phone-continuity(-tablet)?" "$SHARE/applications"/phone-*.desktop 2>/dev/null | xargs -r rm -f
-rm -f "$SHARE/icons/hicolor/scalable/apps"/phone-continuity*.svg
-update-desktop-database "$SHARE/applications" 2>/dev/null || true
+# Phone storage bookmarks in the Files sidebar
+sed -i '/\/storage\/emulated\/0 /d' "$HOME/.config/gtk-3.0/bookmarks" 2>/dev/null
 
-# Quick Share top-bar controls (rQuickShare itself is a system package; left installed)
+# Quick Share top-bar controls
 RQS_UUID=quick-share@phone-setup
-gnome-extensions disable "$RQS_UUID" 2>/dev/null
+gnome-extensions disable "$RQS_UUID" >/dev/null 2>&1
 rm -rf "$SHARE/gnome-shell/extensions/$RQS_UUID" "$SHARE/cinnamon/applets/$RQS_UUID"
 if command -v gnome-shell >/dev/null; then
   python3 - "$RQS_UUID" <<'EOF'
@@ -50,13 +50,22 @@ if new != cur:
     subprocess.run(["gsettings", "set", "org.cinnamon", "enabled-applets", str(new)])
 EOF
 fi
+[ "${1:-}" = "--old-features" ] && exit 0
+
+# ── Mirroring
+for f in phone phone-setup phone-unlock; do
+  rm -f "$BIN/$f"
+done
+rm -f "$BIN/scrcpy" "$BIN/adb"
+rm -rf "$HOME/.local/lib/phone-continuity" "$SHARE/scrcpy"
+grep -lxE "Icon=phone-continuity(-tablet)?" "$SHARE/applications"/phone-*.desktop 2>/dev/null | xargs -r rm -f
+rm -f "$SHARE/icons/hicolor/scalable/apps"/phone-continuity*.svg
+update-desktop-database "$SHARE/applications" 2>/dev/null || true
 
 if [ "${1:-}" = "--purge" ]; then
   rm -rf "$HOME/.config/phone-continuity"
-  sed -i '/\/storage\/emulated\/0 /d' "$HOME/.config/gtk-3.0/bookmarks" 2>/dev/null
-  echo "Removed, including phone settings and Files bookmarks."
+  echo "Removed, including phone settings."
 else
   echo "Removed. Phone settings kept in ~/.config/phone-continuity (use --purge to delete)."
 fi
-echo "Not touched: KDE Connect and Bluetooth pairings, the v4l2loopback driver, system packages"
-echo "(including rQuickShare: remove it with your package manager, package r-quick-share)."
+echo "Not touched: system packages (zenity, libnotify)."
