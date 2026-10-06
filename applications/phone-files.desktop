@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Phone Files
-Comment=Browse your phone's storage
-Exec=@BINDIR@/phone-files
-Icon=phone
-Terminal=false
-Type=Application
-Categories=Utility;

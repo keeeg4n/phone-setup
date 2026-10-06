@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Call History
-Comment=Your phone's recent calls; double-click to call back
-Exec=@BINDIR@/phone-call-log
-Icon=call-start
-Terminal=false
-Type=Application
-Categories=Utility;Telephony;
